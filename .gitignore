@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+
+data/processed/
+artifacts/core1/bruno_core1.pt
