@@ -3,10 +3,18 @@ import argparse
 import json
 import random
 from pathlib import Path
-from typing import Callable, Dict, List, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 
-def clamp_lengths(user_text: str, bruno_text: str, max_total_chars: int = 420) -> Tuple[str, str]:
+DEFAULT_MAX_TOTAL_CHARS = 420
+MAX_TOTAL_CHARS = DEFAULT_MAX_TOTAL_CHARS
+
+
+def clamp_lengths(
+    user_text: str, bruno_text: str, max_total_chars: Optional[int] = None
+) -> Tuple[str, str]:
+    if max_total_chars is None:
+        max_total_chars = MAX_TOTAL_CHARS
     total = len(user_text) + len(bruno_text)
     if total <= max_total_chars:
         return user_text, bruno_text
@@ -234,6 +242,45 @@ def family_learning(rng: random.Random) -> Tuple[str, str]:
     return clamp_lengths(user, bruno)
 
 
+def family_security(rng: random.Random) -> Tuple[str, str]:
+    threats = [
+        "SQL-инъекции",
+        "XSS",
+        "CSRF",
+        "утечка токенов доступа",
+        "подбор паролей",
+        "небезопасная загрузка файлов",
+        "ошибка авторизации по ролям",
+        "exposed secrets в репозитории",
+    ]
+    threat = rng.choice(threats)
+    user = f"Как защитить сервис от {threat}?"
+    bruno = (
+        "Сделай защиту в слоях: валидация входа, строгая авторизация, лимиты, логирование и алерты. "
+        "Проверь это тестом и коротким security-чеклистом перед релизом."
+    )
+    return clamp_lengths(user, bruno)
+
+
+def family_system_design(rng: random.Random) -> Tuple[str, str]:
+    systems = [
+        "чат в реальном времени",
+        "уведомления по событиям",
+        "поиск по каталогу товаров",
+        "очередь фоновых задач",
+        "сервис рекомендаций",
+        "файловое хранилище",
+        "аналитику пользовательских событий",
+    ]
+    system = rng.choice(systems)
+    user = f"С чего начать проектировать {system}?"
+    bruno = (
+        "Начни с требований и ограничений, затем опиши компоненты, поток данных и SLA. "
+        "После этого выбери хранилище, стратегию масштабирования и план наблюдаемости."
+    )
+    return clamp_lengths(user, bruno)
+
+
 def build_examples(target_size: int, seed: int) -> List[Dict[str, str]]:
     rng = random.Random(seed)
     families: List[Callable[[random.Random], Tuple[str, str]]] = [
@@ -247,6 +294,8 @@ def build_examples(target_size: int, seed: int) -> List[Dict[str, str]]:
         family_math,
         family_productivity,
         family_learning,
+        family_security,
+        family_system_design,
     ]
 
     examples: List[Dict[str, str]] = []
@@ -271,7 +320,7 @@ def build_examples(target_size: int, seed: int) -> List[Dict[str, str]]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate large instruction dataset for Bruno Prototype 0.2.")
+    parser = argparse.ArgumentParser(description="Generate large instruction dataset for Bruno prototypes.")
     parser.add_argument(
         "--out",
         default="data/instruction/bruno_train_v2.jsonl",
@@ -279,10 +328,21 @@ def main() -> None:
     )
     parser.add_argument("--size", type=int, default=1200, help="Number of examples to generate.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
+    parser.add_argument(
+        "--max-total-chars",
+        type=int,
+        default=DEFAULT_MAX_TOTAL_CHARS,
+        help="Max characters for user+assistant text before clipping.",
+    )
     args = parser.parse_args()
 
     if args.size < 100:
         raise ValueError("--size should be at least 100 for a useful prototype dataset.")
+    if args.max_total_chars < 120:
+        raise ValueError("--max-total-chars should be >= 120.")
+
+    global MAX_TOTAL_CHARS
+    MAX_TOTAL_CHARS = args.max_total_chars
 
     rows = build_examples(target_size=args.size, seed=args.seed)
     out_path = Path(args.out)

@@ -61,8 +61,15 @@ def main() -> None:
     parser.add_argument("--max-new-tokens", type=int, default=160)
     parser.add_argument("--temperature", type=float, default=0.9)
     parser.add_argument("--top-k", type=int, default=40)
+    parser.add_argument("--top-p", type=float, default=0.92)
+    parser.add_argument("--repetition-penalty", type=float, default=1.1)
     parser.add_argument("--max-turns", type=int, default=4)
     args = parser.parse_args()
+
+    if args.top_p <= 0 or args.top_p > 1:
+        raise ValueError("--top-p must be in the range (0, 1].")
+    if args.repetition_penalty < 1.0:
+        raise ValueError("--repetition-penalty must be >= 1.0.")
 
     tokenizer = CharTokenizer.load(args.tokenizer)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -87,6 +94,8 @@ def main() -> None:
                 max_new_tokens=args.max_new_tokens,
                 temperature=args.temperature,
                 top_k=args.top_k,
+                top_p=args.top_p,
+                repetition_penalty=args.repetition_penalty,
                 eos_id=tokenizer.eos_id,
             )
 

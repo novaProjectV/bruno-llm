@@ -8,6 +8,10 @@
   checkpoint: `artifacts/prototype_0_2/assistant/checkpoint_best.pt`  
   tokenizer: `artifacts/prototype_0_2/core1/tokenizer.json`  
   цель: `train_loss + val_loss`, увеличенный датасет, без truncation
+- `Bruno Prototype 0.3`  
+  checkpoint: `artifacts/prototype_0_3/assistant_v121_e3/checkpoint_best.pt`  
+  tokenizer: `artifacts/prototype_0_2/core1/tokenizer.json`  
+  фишки: большой `v3` датасет, расширение vocab при загрузке чекпоинта, `top-k/top-p` + `repetition penalty` в чате
 
 ## Files
 
@@ -48,6 +52,20 @@ git commit -m "release: Bruno Prototype 0.2 checkpoint"
 git tag -a bruno-prototype-0.2 -m "Bruno Prototype 0.2"
 git push -u origin main
 git push origin bruno-prototype-0.2
+```
+
+## Publish Bruno Prototype 0.3
+
+```bash
+git add README.md bruno_core/model.py scripts/chat.py scripts/generate_prototype_dataset.py scripts/train_instruction.py \
+  data/instruction/bruno_train_v3.jsonl \
+  artifacts/prototype_0_3/assistant_v121_e3/checkpoint_best.pt \
+  artifacts/prototype_0_3/assistant_v121_e3/train_history.json \
+  artifacts/prototype_0_3/assistant_v121_e3/metrics.jsonl
+git commit -m "release: Bruno Prototype 0.3 checkpoint"
+git tag -a bruno-prototype-0.3 -m "Bruno Prototype 0.3"
+git push -u origin main
+git push origin bruno-prototype-0.3
 ```
 
 ## Build Bruno Prototype 0.2
@@ -115,4 +133,60 @@ python3 scripts/train_instruction.py \
 python3 scripts/chat.py \
   --checkpoint artifacts/prototype_0_2/assistant/checkpoint_best.pt \
   --tokenizer artifacts/prototype_0_2/core1/tokenizer.json
+```
+
+## Start Bruno Prototype 0.3
+
+### 1) Сгенерируйте большой `v3` датасет
+
+```bash
+python3 scripts/generate_prototype_dataset.py \
+  --out data/instruction/bruno_train_v3.jsonl \
+  --size 5000 \
+  --seed 43 \
+  --max-total-chars 210
+```
+
+### 2) Подготовьте train/val
+
+```bash
+python3 scripts/prepare_instruction_data.py \
+  --input data/instruction/bruno_train_v3.jsonl \
+  --tokenizer artifacts/prototype_0_2/core1/tokenizer.json \
+  --out data/processed/prototype_0_3_train_v121.pt \
+  --out-val data/processed/prototype_0_3_val_v121.pt \
+  --val-ratio 0.1 \
+  --block-size 256 \
+  --truncate-mode error
+```
+
+### 3) Обучите `0.3` от `0.2` чекпоинта
+
+`train_instruction.py` теперь автоматически расширяет `wte/lm_head` под vocab tokenizer, если он больше vocab чекпоинта.
+
+```bash
+python3 -u scripts/train_instruction.py \
+  --base-checkpoint artifacts/prototype_0_2/assistant/checkpoint_best.pt \
+  --train-data data/processed/prototype_0_3_train_v121.pt \
+  --val-data data/processed/prototype_0_3_val_v121.pt \
+  --tokenizer artifacts/prototype_0_2/core1/tokenizer.json \
+  --out-dir artifacts/prototype_0_3/assistant_v121_e3 \
+  --epochs 2 \
+  --batch-size 32 \
+  --learning-rate 1.5e-5 \
+  --log-every 25 \
+  --prototype-name "Bruno Prototype 0.3"
+```
+
+### 4) Запуск чата с новыми параметрами сэмплинга
+
+```bash
+python3 scripts/chat.py \
+  --checkpoint artifacts/prototype_0_3/assistant_v121_e3/checkpoint_best.pt \
+  --tokenizer artifacts/prototype_0_2/core1/tokenizer.json \
+  --temperature 0.6 \
+  --top-k 30 \
+  --top-p 0.92 \
+  --repetition-penalty 1.1 \
+  --max-new-tokens 120
 ```

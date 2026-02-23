@@ -152,6 +152,8 @@ class GPT(nn.Module):
         max_new_tokens: int,
         temperature: float = 1.0,
         top_k: Optional[int] = None,
+        top_p: Optional[float] = None,
+        repetition_penalty: float = 1.0,
         eos_id: Optional[int] = None,
     ) -> torch.Tensor:
         for _ in range(max_new_tokens):
@@ -160,9 +162,32 @@ class GPT(nn.Module):
             logits = logits[:, -1, :]
             logits = logits / max(temperature, 1e-6)
 
+            if repetition_penalty > 1.0:
+                # Penalize tokens that already appeared in the current context.
+                for row_idx in range(idx.size(0)):
+                    seen_ids = torch.unique(idx[row_idx])
+                    seen_logits = logits[row_idx, seen_ids]
+                    logits[row_idx, seen_ids] = torch.where(
+                        seen_logits < 0,
+                        seen_logits * repetition_penalty,
+                        seen_logits / repetition_penalty,
+                    )
+
             if top_k is not None:
                 values, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < values[:, [-1]]] = -float("inf")
+
+            if top_p is not None and 0 < top_p < 1:
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+                sorted_probs = F.softmax(sorted_logits, dim=-1)
+                cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+                sorted_remove = cumulative_probs > top_p
+                sorted_remove[..., 1:] = sorted_remove[..., :-1].clone()
+                sorted_remove[..., 0] = False
+
+                remove_mask = torch.zeros_like(logits, dtype=torch.bool)
+                remove_mask.scatter_(1, sorted_indices, sorted_remove)
+                logits = logits.masked_fill(remove_mask, -float("inf"))
 
             probs = F.softmax(logits, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1)

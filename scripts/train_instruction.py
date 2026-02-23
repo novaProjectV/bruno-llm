@@ -17,6 +17,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from bruno_core.model import GPT, GPTConfig
+from bruno_core.tokenizer import CharTokenizer
 
 
 class TensorDataset(Dataset):
@@ -40,7 +41,9 @@ def _pick_first(payload: dict, keys: list[str]):
     return None
 
 
-def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> tuple[GPT, dict]:
+def load_model_from_checkpoint(
+    checkpoint_path: str, device: torch.device, target_vocab_size: Optional[int] = None
+) -> tuple[GPT, dict]:
     raw = torch.load(checkpoint_path, map_location="cpu")
     cfg_dict = _pick_first(raw, ["model_config", "model_args", "config"])
     if cfg_dict is None:
@@ -56,6 +59,27 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> tu
         cleaned_state[cleaned_key] = value
 
     config = GPTConfig.from_dict(cfg_dict)
+    if target_vocab_size is not None and target_vocab_size != config.vocab_size:
+        if target_vocab_size < config.vocab_size:
+            raise ValueError(
+                f"Tokenizer vocab ({target_vocab_size}) is smaller than checkpoint vocab "
+                f"({config.vocab_size}); shrinking is not supported."
+            )
+        old_vocab = config.vocab_size
+        config.vocab_size = target_vocab_size
+        for key in ("wte.weight", "lm_head.weight"):
+            if key not in cleaned_state:
+                continue
+            old_weight = cleaned_state[key]
+            new_weight = torch.empty(
+                (target_vocab_size, old_weight.size(1)),
+                dtype=old_weight.dtype,
+            )
+            torch.nn.init.normal_(new_weight, mean=0.0, std=0.02)
+            new_weight[:old_vocab] = old_weight
+            cleaned_state[key] = new_weight
+        print(f"Resized token embeddings: vocab {old_vocab} -> {target_vocab_size}")
+
     model = GPT(config)
     missing, unexpected = model.load_state_dict(cleaned_state, strict=False)
     if missing:
@@ -122,7 +146,16 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    model, base_raw = load_model_from_checkpoint(args.base_checkpoint, device)
+    target_vocab_size = None
+    if args.tokenizer:
+        tokenizer = CharTokenizer.load(args.tokenizer)
+        target_vocab_size = tokenizer.vocab_size
+
+    model, base_raw = load_model_from_checkpoint(
+        args.base_checkpoint,
+        device,
+        target_vocab_size=target_vocab_size,
+    )
 
     train_payload = torch.load(args.train_data, map_location="cpu")
     train_dataset = TensorDataset(train_payload)
