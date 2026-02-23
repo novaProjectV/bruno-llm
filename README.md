@@ -12,6 +12,10 @@
   checkpoint: `artifacts/prototype_0_3/assistant_v121_e3/checkpoint_best.pt`  
   tokenizer: `artifacts/prototype_0_2/core1/tokenizer.json`  
   фишки: большой `v3` датасет, расширение vocab при загрузке чекпоинта, `top-k/top-p` + `repetition penalty` в чате
+- `Bruno Prototype 0.4`  
+  checkpoint: `artifacts/prototype_0_4/assistant_20k_e1/checkpoint_best.pt`  
+  tokenizer: `artifacts/prototype_0_2/core1/tokenizer.json`  
+  фишки: `20k` примеров, профиль `v4-cot` с математикой по шагам + языковые задачи
 
 ## Files
 
@@ -183,6 +187,61 @@ python3 -u scripts/train_instruction.py \
 ```bash
 python3 scripts/chat.py \
   --checkpoint artifacts/prototype_0_3/assistant_v121_e3/checkpoint_best.pt \
+  --tokenizer artifacts/prototype_0_2/core1/tokenizer.json \
+  --temperature 0.6 \
+  --top-k 30 \
+  --top-p 0.92 \
+  --repetition-penalty 1.1 \
+  --max-new-tokens 120
+```
+
+## Start Bruno Prototype 0.4
+
+### 1) Сгенерируйте `20k` датасет `v4-cot`
+
+```bash
+python3 scripts/generate_prototype_dataset.py \
+  --out data/instruction/bruno_train_v4.jsonl \
+  --size 20000 \
+  --seed 44 \
+  --profile v4-cot \
+  --max-total-chars 190
+```
+
+### 2) Подготовьте train/val
+
+```bash
+python3 scripts/prepare_instruction_data.py \
+  --input data/instruction/bruno_train_v4.jsonl \
+  --tokenizer artifacts/prototype_0_2/core1/tokenizer.json \
+  --out data/processed/prototype_0_4_train.pt \
+  --out-val data/processed/prototype_0_4_val.pt \
+  --val-ratio 0.1 \
+  --block-size 256 \
+  --truncate-mode error
+```
+
+### 3) Обучите `0.4` от `0.3` чекпоинта
+
+```bash
+python3 -u scripts/train_instruction.py \
+  --base-checkpoint artifacts/prototype_0_3/assistant_v121_e3/checkpoint_best.pt \
+  --train-data data/processed/prototype_0_4_train.pt \
+  --val-data data/processed/prototype_0_4_val.pt \
+  --tokenizer artifacts/prototype_0_2/core1/tokenizer.json \
+  --out-dir artifacts/prototype_0_4/assistant_20k_e1 \
+  --epochs 1 \
+  --batch-size 64 \
+  --learning-rate 1.2e-5 \
+  --log-every 25 \
+  --prototype-name "Bruno Prototype 0.4"
+```
+
+### 4) Чат с `0.4`
+
+```bash
+python3 scripts/chat.py \
+  --checkpoint artifacts/prototype_0_4/assistant_20k_e1/checkpoint_best.pt \
   --tokenizer artifacts/prototype_0_2/core1/tokenizer.json \
   --temperature 0.6 \
   --top-k 30 \
