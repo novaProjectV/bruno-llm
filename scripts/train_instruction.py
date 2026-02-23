@@ -5,6 +5,7 @@ import math
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -86,6 +87,13 @@ def evaluate(model: GPT, loader: DataLoader, device: torch.device) -> float:
     return sum(losses) / len(losses)
 
 
+def format_epoch_metrics(epoch: int, train_loss: float, val_loss: Optional[float]) -> str:
+    base = f"Epoch {epoch}: train_loss={train_loss:.4f} train_ppl={math.exp(train_loss):.2f}"
+    if val_loss is not None:
+        base += f" | val_loss={val_loss:.4f} val_ppl={math.exp(val_loss):.2f}"
+    return base
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Instruction tuning for Bruno assistant.")
     parser.add_argument("--base-checkpoint", required=True, help="Path to Bruno Core 1 checkpoint.")
@@ -99,6 +107,11 @@ def main() -> None:
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--log-every", type=int, default=20)
+    parser.add_argument(
+        "--prototype-name",
+        default="Bruno Prototype 0.2",
+        help="Name/version saved into checkpoint metadata.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
@@ -174,19 +187,26 @@ def main() -> None:
                 )
 
         train_loss = sum(epoch_losses) / max(len(epoch_losses), 1)
-        train_history.append({"epoch": epoch, "train_loss": train_loss})
-        print(f"Epoch {epoch}: train_loss={train_loss:.4f} ppl={math.exp(train_loss):.2f}")
-
         val_loss = None
         if val_loader is not None:
             val_loss = evaluate(model, val_loader, device)
-            print(f"Epoch {epoch}: val_loss={val_loss:.4f} ppl={math.exp(val_loss):.2f}")
+
+        history_row = {
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "train_ppl": math.exp(train_loss),
+            "val_loss": val_loss,
+            "val_ppl": math.exp(val_loss) if val_loss is not None else None,
+        }
+        train_history.append(history_row)
+        print(format_epoch_metrics(epoch=epoch, train_loss=train_loss, val_loss=val_loss))
 
         checkpoint = {
             "model_state": model.state_dict(),
             "model_config": asdict(model.config),
             "parent_checkpoint": str(args.base_checkpoint),
             "tokenizer_path": args.tokenizer or base_raw.get("tokenizer_path"),
+            "prototype_name": args.prototype_name,
             "epoch": epoch,
             "global_step": global_step,
             "train_history": train_history,
@@ -204,6 +224,10 @@ def main() -> None:
 
     (out_dir / "train_history.json").write_text(
         json.dumps(train_history, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out_dir / "metrics.jsonl").write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in train_history) + "\n",
         encoding="utf-8",
     )
     print(f"Training complete. Last checkpoint: {out_dir / 'checkpoint_last.pt'}")
