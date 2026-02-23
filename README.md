@@ -5,6 +5,8 @@
 - `Bruno Prototype 0.1`  
   baseline checkpoint: `artifacts/bruno_assistant1/checkpoint_last.pt`
 - `Bruno Prototype 0.2`  
+  checkpoint: `artifacts/prototype_0_2/assistant/checkpoint_best.pt`  
+  tokenizer: `artifacts/prototype_0_2/core1/tokenizer.json`  
   цель: `train_loss + val_loss`, увеличенный датасет, без truncation
 
 ## Files
@@ -32,6 +34,20 @@ git commit -m "release: Bruno Prototype 0.1"
 git tag -a bruno-prototype-0.1 -m "Bruno Prototype 0.1"
 git push -u origin main
 git push origin bruno-prototype-0.1
+```
+
+## Publish Bruno Prototype 0.2
+
+```bash
+git add README.md \
+  artifacts/prototype_0_2/core1/tokenizer.json \
+  artifacts/prototype_0_2/assistant/checkpoint_best.pt \
+  artifacts/prototype_0_2/assistant/train_history.json \
+  artifacts/prototype_0_2/assistant/metrics.jsonl
+git commit -m "release: Bruno Prototype 0.2 checkpoint"
+git tag -a bruno-prototype-0.2 -m "Bruno Prototype 0.2"
+git push -u origin main
+git push origin bruno-prototype-0.2
 ```
 
 ## Build Bruno Prototype 0.2
@@ -97,6 +113,6 @@ python3 scripts/train_instruction.py \
 
 ```bash
 python3 scripts/chat.py \
-  --checkpoint artifacts/prototype_0_2/assistant/checkpoint_last.pt \
+  --checkpoint artifacts/prototype_0_2/assistant/checkpoint_best.pt \
   --tokenizer artifacts/prototype_0_2/core1/tokenizer.json
 ```
